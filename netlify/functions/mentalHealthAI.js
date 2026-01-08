@@ -1,6 +1,13 @@
-export async function handler(event) {
+exports.handler = async function (event) {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method not allowed" };
+  }
+
+  if (!process.env.MENTAL_HEALTH_API_URL || !process.env.MENTAL_HEALTH_API_KEY) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: "Missing MENTAL_HEALTH_API_URL or MENTAL_HEALTH_API_KEY environment variables" })
+    };
   }
 
   const { message, category } = JSON.parse(event.body || "{}");
@@ -23,31 +30,31 @@ export async function handler(event) {
       body: JSON.stringify({ inputs: prompt })
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = text; }
+
+    if (!res.ok) {
+      return {
+        statusCode: 502,
+        body: JSON.stringify({ error: "Upstream service error", status: res.status, body: data })
+      };
+    }
 
     return {
       statusCode: 200,
       body: JSON.stringify({
-        reply: data?.reply || data?.[0]?.generated_text || ""
+        reply: data?.reply || data?.[0]?.generated_text || (typeof data === 'string' ? data : '')
       })
     };
 
-  } catch {
+  } catch (err) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ reply: "Service temporarily unavailable." })
+      body: JSON.stringify({ reply: "Service temporarily unavailable.", error: String(err) })
     };
   }
-}
-export async function sendMentalHealthMessage(message, category) {
-  const res = await fetch("/.netlify/functions/mentalHealthAI", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, category })
-  });
-  
-  return res.json();
-} 
+};
 
 
 
